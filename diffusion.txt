@@ -1,0 +1,143 @@
+train:
+train_video.forward_step -> diffusion_video.SATVideoDiffusionEngine.shared_step - > SATVideoDiffusionEngine.forward -> sgm.modules.diffusionmodules.loss.VideoDiffusionLoss.__call__ ->
+sgm.modules.diffusionmodules.denoiser.Denoiser.forward -> sgm.modules.diffusionmodules.wrappers.OpenAIWrapper.forward -> dit_video_concat.DiffusionTransformer.forward -> 
+sat.model.base_model.BaseModel.forward -> sat.model.base_model.transformer.BaseTransformer.forward -> dit_video_concat.AdaLNMixin.layer_forward
+
+inference:
+diffusion_video.SATVideoDiffusionEngine.sample -> sgm.modules.diffusionmodules.sampling.VPSDEDPMPP2MSampler.denoise -> sgm.modules.diffusionmodules.denoiser.Denoiser.forward -> OpenAIWrapper.forward -> 
+dit_video_concat.DiffusionTransformer.forward - > BaseModel.forward - > BaseTransformer.forward -> dit_video_concat.AdaLNMixin.layer_forward ->
+
+
+cross_attention修改：
+1.训练数据集处理：datavideo.SFTDataset(增加参考图像，以路径存储)
+2.condition处理：sgm.modules.encoders.modules增加Image_encoder用于编码参考图像,同时修改config配置文件，在sgm.modules.diffusionmodules.wrappers.OpenAIWrapper.forward中通过 kwargs["ref_image"] = c["ref_image"] 向Dit中传递
+3.cross_attention: config中通过transformer_args的 image_encoder: true 判断是否增加cross_attention，sat.model.base_model.transformer.BaseTransformerLayer.__init__进行cross_attention初始化，sat.model.base_model.transformer.cross_attention对cross_attention定义，
+cross_attention对应forward在sat.transformer_defaults
+4.参数更新设置：SATVideoDiffusionEngine.disable_untrainable_params，所有cross_attention层，及Image_encoder.image_proj(linear：1024->1920)
+
+
+
+DiffusionTransformer(
+  (mixins): ModuleDict(
+    (pos_embed): Basic3DPositionEmbeddingMixin()
+    (patch_embed): ImagePatchEmbeddingMixin(
+      (proj): Conv2d(16, 1920, kernel_size=(2, 2), stride=(2, 2))
+      (text_proj): Linear(in_features=4096, out_features=1920, bias=True)
+    )
+    (adaln_layer): AdaLNMixin(
+      (adaLN_modulations): ModuleList(
+        (0-29): 30 x Sequential(
+          (0): SiLU()
+          (1): Linear(in_features=512, out_features=23040, bias=True)
+        )
+      )
+      (query_layernorm_list): ModuleList(
+        (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+      )
+      (key_layernorm_list): ModuleList(
+        (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+      )
+    )
+    (final_layer): FinalLayerMixin(
+      (norm_final): LayerNorm((1920,), eps=1e-06, elementwise_affine=True)
+      (linear): Linear(in_features=1920, out_features=64, bias=True)
+      (adaLN_modulation): Sequential(
+        (0): SiLU()
+        (1): Linear(in_features=512, out_features=3840, bias=True)
+      )
+    )
+  )
+  (transformer): BaseTransformer(
+    (embedding_dropout): Dropout(p=0, inplace=False)
+    (layers): ModuleList(
+      (0-29): 30 x BaseTransformerLayer(
+        (input_layernorm): LayerNorm((1920,), eps=1e-05, elementwise_affine=True)
+        (attention): SelfAttention(
+          (query_key_value): ColumnParallelLinear()
+          (attention_dropout): Dropout(p=0, inplace=False)
+          (dense): RowParallelLinear()
+          (output_dropout): Dropout(p=0, inplace=False)
+        )
+        (post_attention_layernorm): LayerNorm((1920,), eps=1e-05, elementwise_affine=True)
+        (mlp): MLP(
+          (activation_func): GELU(approximate='tanh')
+          (dense_h_to_4h): ColumnParallelLinear()
+          (dense_4h_to_h): RowParallelLinear()
+          (dropout): Dropout(p=0, inplace=False)
+        )
+      )
+    )
+    (final_layernorm): LayerNorm((1920,), eps=1e-05, elementwise_affine=True)
+  )
+  (time_embed): Sequential(
+    (0): Linear(in_features=1920, out_features=512, bias=True)
+    (1): SiLU()
+    (2): Linear(in_features=512, out_features=512, bias=True)
+  )
+)
+
+
+hook:
+{'attention_fn': functools.partial(<bound method AdaLNMixin.attention_fn of AdaLNMixin(                                               | 5/51 [00:09<01:16,  1.67s/it]
+  (adaLN_modulations): ModuleList(
+    (0-29): 30 x Sequential(
+      (0): SiLU()
+      (1): Linear(in_features=512, out_features=23040, bias=True)
+    )
+  )
+  (query_layernorm_list): ModuleList(
+    (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+  )
+  (key_layernorm_list): ModuleList(
+    (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+  )
+)>, old_impl=<function attention_fn_default at 0x7fb1d99a8310>), 
+
+'word_embedding_forward': <bound method ImagePatchEmbeddingMixin.word_embedding_forward of ImagePatchEmbeddingMixin(
+  (proj): Conv2d(16, 1920, kernel_size=(2, 2), stride=(2, 2))
+  (text_proj): Linear(in_features=4096, out_features=1920, bias=True)
+)>, 
+
+'position_embedding_forward': <bound method Basic3DPositionEmbeddingMixin.position_embedding_forward of Basic3DPositionEmbeddingMixin()>, 
+
+'final_forward': <bound method FinalLayerMixin.final_forward of FinalLayerMixin(
+  (norm_final): LayerNorm((1920,), eps=1e-06, elementwise_affine=True)
+  (linear): Linear(in_features=1920, out_features=64, bias=True)
+  (adaLN_modulation): Sequential(
+    (0): SiLU()
+    (1): Linear(in_features=512, out_features=3840, bias=True)
+  )
+)>, 
+
+'layer_forward': <bound method AdaLNMixin.layer_forward of AdaLNMixin(
+  (adaLN_modulations): ModuleList(
+    (0-29): 30 x Sequential(
+      (0): SiLU()
+      (1): Linear(in_features=512, out_features=23040, bias=True)
+    )
+  )
+  (query_layernorm_list): ModuleList(
+    (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+  )
+  (key_layernorm_list): ModuleList(
+    (0-29): 30 x LayerNorm((64,), eps=1e-06, elementwise_affine=True)
+  )
+)>}
+
+AdaLNMixin.transformer.layer:
+BaseTransformerLayer(
+  (input_layernorm): LayerNorm((1920,), eps=1e-05, elementwise_affine=True)
+  (attention): SelfAttention(
+    (query_key_value): ColumnParallelLinear()
+    (attention_dropout): Dropout(p=0, inplace=False)
+    (dense): RowParallelLinear()
+    (output_dropout): Dropout(p=0, inplace=False)
+  )
+  (post_attention_layernorm): LayerNorm((1920,), eps=1e-05, elementwise_affine=True)
+  (mlp): MLP(
+    (activation_func): GELU(approximate='tanh')
+    (dense_h_to_4h): ColumnParallelLinear()
+    (dense_4h_to_h): RowParallelLinear()
+    (dropout): Dropout(p=0, inplace=False)
+  )
+)

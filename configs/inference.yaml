@@ -1,0 +1,17 @@
+args:
+  image2video: False # True for image2video, False for text2video
+  latent_channels: 16
+  mode: inference
+  # load: "../transformer" # This is for Full model without lora adapter
+  load: "./ckpts_2b_ip/Cross_attention-11-08-11-02" # This is for Full model without lora adapter
+  batch_size: 1
+  input_type: txt
+  # input_file: configs/test.txt # For CogvideoX_2b
+  input_file: dog_inference_test #For CogvideX_2b_attention
+  sampling_image_size: [480, 720]
+  sampling_num_frames: 13  # Must be 13, 11 or 9
+  sampling_fps: 8
+  fp16: True # For CogVideoX-2B
+  # bf16: True # For CogVideoX-5B and CoGVideoX-5B-I2V
+  output_dir: outputs_attention/epochs_15/
+  force_inference: True
