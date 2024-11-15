@@ -1,6 +1,6 @@
 # CogvideoX_IP
 
-## 配置同CogvideX
+## 环境及模型权重配置同CogvideX
 ### 安装依赖
 ```bash
 # clone story repo
