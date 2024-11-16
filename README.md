@@ -129,7 +129,7 @@ mv CogVideoX-2b/text_encoder/* CogVideoX-2b/tokenizer/* t5-v1_1-xxl
   split: 1,0,0 # 训练集，验证集，测试集比例
   num_workers: 8 # 数据加载器的工作线程数
   force_train: True # 在加载checkpoint时允许missing keys (T5 和 VAE 单独加载)
-  only_log_video_latents: True # 避免VAE decode带来的显存开销
+  only_log_video_latents: true # 避免VAE decode带来的显存开销,改为false，保存训练中验证视频
   deepspeed:
     bf16:
       enabled: False # For CogVideoX-2B Turn to False and For CogVideoX-5B Turn to True
