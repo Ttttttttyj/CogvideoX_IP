@@ -82,10 +82,11 @@ def cross_attention_fn_default(query_layer, key_layer, value_layer, attention_ma
                        attention_dropout=None, log_attention_weights=None, scaling_attention_score=True, **kwargs):
     # expand head dim to query dim, if necessary
     # only useful for multi-query attention
-    batch_size, T, num_query_heads = query_layer.shape[:3] # [b, t, np, s, hn]
-    num_kv_heads = key_layer.shape[2]  # [b, 1, np, s, hn]
-    key_layer = key_layer.unsqueeze(3).expand(-1, -1, -1,num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, 1,num_query_heads, *key_layer.shape[3:])
-    value_layer = value_layer.unsqueeze(3).expand(-1, -1, -1,num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, 1,num_query_heads, *value_layer.shape[3:])
+    batch_size, num_query_heads = query_layer.shape[:2] # [b, np, s, hn]
+    num_kv_heads = key_layer.shape[1] # [b, np, s, hn]
+    key_layer = key_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *key_layer.shape[2:])
+    value_layer = value_layer.unsqueeze(2).expand(-1, -1, num_query_heads//num_kv_heads, -1, -1).contiguous().view(batch_size, num_query_heads, *value_layer.shape[2:])
+    
 
 
     # is_low_triangle = (attention_mask == torch.ones_like(attention_mask, dtype=torch.float).tril()).all()
@@ -149,23 +150,23 @@ def attention_forward_default(self, hidden_states, mask, **kw_args):
     return output
 
 def cross_attention_forward_default(self, hidden_states, cross_attention_mask, image_encoder_outputs, **kw_args):
-    self = self.transformer.layers[kw_args['layer_id']].cross_attention
+    # self = self.transformer.layers[kw_args['layer_id']].cross_attention
     cross_attention_fn = cross_attention_fn_default
     if 'cross_attention_fn' in self.hooks:
         cross_attention_fn = self.hooks['cross_attention_fn']
 
     mixed_query_layer = self.query(hidden_states)
-    query_layer = self._transpose_for_scores(mixed_query_layer) #torch.Size([1, 13, 30, 1350, 64])
+    query_layer = self._transpose_for_scores(mixed_query_layer) 
     dropout_fn = self.attention_dropout if self.training else None
     if isinstance(image_encoder_outputs, torch.Tensor):
         mixed_x_layer = self.key_value(image_encoder_outputs)
         (mixed_key_layer, mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 2) #[b,hw,d]
         # Reshape and transpose [b, np, s, hn]  #[b, np, hw, hn]
-        # key_layer = self._transpose_for_scores(mixed_key_layer)
-        # value_layer = self._transpose_for_scores(mixed_value_layer)
+        key_layer = self._transpose_for_scores(mixed_key_layer)
+        value_layer = self._transpose_for_scores(mixed_value_layer)
 
-        key_layer = self._transpose_for_scores(mixed_key_layer.unsqueeze(1)) #change [b,1,np,hw,hn]
-        value_layer = self._transpose_for_scores(mixed_value_layer.unsqueeze(1) ) #torch.Size([b, 1, 30, 257, 64])
+        # key_layer = self._transpose_for_scores(mixed_key_layer.unsqueeze(1)) #change [b,1,np,hw,hn]
+        # value_layer = self._transpose_for_scores(mixed_value_layer.unsqueeze(1) ) #torch.Size([b, 1, 30, 257, 64])
 
         mem_cross = (key_layer, value_layer)
     else:
@@ -173,8 +174,8 @@ def cross_attention_forward_default(self, hidden_states, cross_attention_mask, i
         mem_cross = (key_layer, value_layer)
 
     context_layer = cross_attention_fn(query_layer, key_layer, value_layer, cross_attention_mask, dropout_fn, cross_attention=True, mem_cross=mem_cross, **kw_args)
-    # context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-    context_layer = context_layer.permute(0, 1, 3, 2, 4).contiguous()
+    context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+    # context_layer = context_layer.permute(0, 1, 3, 2, 4).contiguous()
     new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
     #[b,t,hw,hp]
     context_layer = context_layer.view(*new_context_layer_shape)

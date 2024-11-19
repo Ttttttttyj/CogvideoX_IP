@@ -3,7 +3,7 @@ args:
   model_parallel_size: 1
   experiment_name: Cross_attention
   mode: finetune
-  load: "../transformer"
+  load: "./transformer"
   no_load_rng: True
   # train_iters: 500 # Suggest more than 1000 For Lora and SFT For 500 is enough
   epochs: 100

@@ -77,10 +77,10 @@ model:
           ucg_rate: 0.1
           target: sgm.modules.encoders.modules.FrozenT5Embedder
           params:
-            model_dir: "../t5-v1_1-xxl"
+            model_dir: "./t5-v1_1-xxl"
             max_length: 226
 
-        - is_trainable: false #True for encoder_train
+        - is_trainable: true #True for encoder_train
           input_key: ref_image
           target: sgm.modules.encoders.modules.ImageEncoder
           params:
@@ -91,7 +91,7 @@ model:
     target: vae_modules.autoencoder.VideoAutoencoderInferenceWrapper
     params:
       cp_size: 1
-      ckpt_path: "../vae/3d-vae.pt"
+      ckpt_path: "./vae/3d-vae.pt"
       ignore_keys: [ 'loss' ]
 
       loss_config:

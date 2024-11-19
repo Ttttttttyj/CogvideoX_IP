@@ -179,19 +179,15 @@ class CrossAttention(torch.nn.Module):
         """Transpose a 3D tensor [b, s, np*hn] into a 4D tensor with
         size [b, np, s, hn].
         """
-
-        """Transpose a 4D tensor [b, t, hw, np*hn] into a 5D tensor with
-        size [b, t, np, hw, hn].
-        """
         new_tensor_shape = tensor.size()[:-1] + \
                            (-1, # flexible for multi-query
                             self.hidden_size_per_attention_head)
         tensor = tensor.view(*new_tensor_shape)
-        # return tensor.permute(0, 2, 1, 3)
-        return tensor.permute(0, 1, 3, 2, 4)
+        return tensor.permute(0, 2, 1, 3)
+        # return tensor.permute(0, 1, 3, 2, 4)
 
     def forward(self, hidden_states, cross_attention_mask, image_encoder_outputs, **kw_args):
-        # hidden_states: [b, s, h]  #[b, t, hw, h]
+        # hidden_states: [b, s, h]
         if 'cross_attention_forward' in self.hooks:
             return self.hooks['cross_attention_forward'](hidden_states, cross_attention_mask,image_encoder_outputs, **kw_args)
         else:
@@ -396,7 +392,7 @@ class BaseTransformerLayer(torch.nn.Module):
         # Cross attention.
         # if self.is_decoder:
         if self.is_decoder or self.image_encoder: #change
-            self.cross_attention = CrossAttention(
+            self.cross_attention_1 = CrossAttention(
                 hidden_size,
                 num_attention_heads,
                 attention_dropout_prob,
@@ -413,7 +409,24 @@ class BaseTransformerLayer(torch.nn.Module):
                 transformer_pointer=transformer_pointer,
                 params_dtype=params_dtype
             )
-            self.post_cross_attention_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
+
+            self.cross_attention_2 = CrossAttention(
+                hidden_size,
+                num_attention_heads,
+                attention_dropout_prob,
+                output_dropout_prob,
+                init_method,
+                layer_id,
+                hidden_size_per_attention_head=cross_hidden_size_per_attention_head,
+                output_layer_init_method=output_layer_init_method,
+                cross_attn_hidden_size=cross_attn_hidden_size,
+                bias=use_bias,
+                cross_num_multi_query_heads=cross_num_multi_query_heads,
+                row_parallel_linear_final_bias=row_parallel_linear_final_bias,
+                hooks=hooks,
+                transformer_pointer=transformer_pointer,
+                params_dtype=params_dtype
+            )
 
         # MLP
         self.mlp = MLP(

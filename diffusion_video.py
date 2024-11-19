@@ -93,7 +93,7 @@ class SATVideoDiffusionEngine(nn.Module):
     def disable_untrainable_params(self):
         total_trainable = 0
         for n, p in self.named_parameters():
-            if "cross_attention" in n:
+            if "cross_attention" in n or 'adaLN_modulations_for_image' in n:
                 p.requires_grad_(True)
             if p.requires_grad == False:
                 continue
@@ -115,7 +115,7 @@ class SATVideoDiffusionEngine(nn.Module):
             #         flag = False
             #         break
 
-            image_prefix = ["image_proj","cross_attention"]
+            image_prefix = ["image_proj","cross_attention","adaLN_modulations_for_image"]
             for prefix in image_prefix:
                 if prefix in n:
                     flag = False
