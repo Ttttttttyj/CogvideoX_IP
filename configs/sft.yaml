@@ -13,8 +13,8 @@ args:
   save: ckpts_2b_ip
   save_interval: 13250
   log_interval: 20
-  train_data: [ "./dog_dataset" ] # Train data path
-  # valid_data: None # Validation data path, can be the same as train_data(not recommended)
+  train_data: [ "./dog_dataset_train" ] # Train data path
+  valid_data: [ "./dog_dataset_valid" ] # Validation data path, can be the same as train_data(not recommended)
   split: 1,0,0
   num_workers: 8
   force_train: True
