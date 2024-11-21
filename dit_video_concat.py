@@ -460,7 +460,7 @@ class AdaLNMixin(BaseMixin):
             [nn.Sequential(nn.SiLU(), nn.Linear(time_embed_dim, 12 * hidden_size)) for _ in range(num_layers)]
         )
 
-         self.adaLN_modulations_for_image = nn.ModuleList(
+        self.adaLN_modulations_for_image = nn.ModuleList(
             [nn.Sequential(nn.SiLU(), nn.Linear(time_embed_dim, 8 * hidden_size)) for _ in range(num_layers)]
         )
 
