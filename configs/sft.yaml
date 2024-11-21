@@ -45,9 +45,9 @@ deepspeed:
     load_from_fp32_weights: false
   zero_allow_untested_optimizer: true
   bf16:
-      enabled: True  # For CogVideoX-2B Turn to False and For CogVideoX-5B Turn to True
+      enabled: False  # For CogVideoX-2B Turn to False and For CogVideoX-5B Turn to True
   fp16:
-      enabled: False  # For CogVideoX-2B Turn to True and For CogVideoX-5B Turn to False
+      enabled: True  # For CogVideoX-2B Turn to True and For CogVideoX-5B Turn to False
   loss_scale: 0
   loss_scale_window: 400
   hysteresis: 2
