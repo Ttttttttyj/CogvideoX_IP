@@ -32,27 +32,9 @@ class OpenAIWrapper(IdentityWrapper):
         else:
             raise ValueError("Input tensor must be 4D or 5D")
 
-        kwargs["ref_image"] = c["ref_image"] #change
-
-        return self.diffusion_model(
-            x,
-            timesteps=t,
-            context=c.get("crossattn", None),
-            y=c.get("vector", None),
-            **kwargs,
-        )
-class OpenAIWrapper_IP(IdentityWrapper):
-    def forward(self, x: torch.Tensor, t: torch.Tensor, c: dict, **kwargs) -> torch.Tensor:
-        for key in c:
-            c[key] = c[key].to(self.dtype)
-
-        if x.dim() == 4:
-            x = torch.cat((x, c.get("concat", torch.Tensor([]).type_as(x))), dim=1)
-        elif x.dim() == 5:
-            x = torch.cat((x, c.get("concat", torch.Tensor([]).type_as(x))), dim=2)
-        else:
-            raise ValueError("Input tensor must be 4D or 5D")
-        
+        if "ref_image" in c.keys():
+            kwargs["ref_image"] = c["ref_image"] #change [b,257,1920]
+            kwargs["ref_image_length"] = c["ref_image"].shape[1]
 
         return self.diffusion_model(
             x,

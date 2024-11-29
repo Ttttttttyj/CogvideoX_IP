@@ -35,7 +35,7 @@ class SelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
                  init_method, layer_id, hidden_size_per_attention_head=None, output_layer_init_method=None, bias=True, qkv_bias=False, num_multi_query_heads=0, row_parallel_linear_final_bias=True,
-                 hooks={}, transformer_pointer=None, params_dtype=torch.float, skip_init=False, device=torch.device('cpu')):
+                 hooks={}, transformer_pointer=None, params_dtype=torch.float, skip_init=False, image_encoder=False,device=torch.device('cpu')):
         super(SelfAttention, self).__init__()
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
@@ -47,6 +47,7 @@ class SelfAttention(torch.nn.Module):
         self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
         self.num_multi_query_heads = num_multi_query_heads
+        self.image_encoder = image_encoder
         if hidden_size_per_attention_head is None:
             self.hidden_size_per_attention_head = divide(hidden_size, num_attention_heads)
         else:
@@ -91,6 +92,33 @@ class SelfAttention(torch.nn.Module):
             device=device,
             final_bias=row_parallel_linear_final_bias
         )
+        if self.image_encoder:#change4
+            self.query_key_value_for_ref_image = ColumnParallelLinear( 
+                hidden_size,
+                qkv_size,
+                stride=self.stride,
+                gather_output=False,
+                init_method=init_method,
+                bias=bias or qkv_bias,
+                params_dtype=params_dtype,
+                module=self,
+                name="query_key_value_for_ref_image",
+                skip_init=skip_init,
+                device=device
+            )
+            self.dense_for_ref_image = RowParallelLinear(
+                self.inner_hidden_size,
+                hidden_size,
+                input_is_parallel=True,
+                init_method=output_layer_init_method,
+                bias=bias,
+                params_dtype=params_dtype,
+                module=self,
+                name="dense_for_ref_image",
+                skip_init=skip_init,
+                device=device,
+                final_bias=row_parallel_linear_final_bias
+            )
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
         
         object.__setattr__(self, 'transformer', transformer_pointer)
@@ -329,7 +357,7 @@ class BaseTransformerLayer(torch.nn.Module):
             layernorm_order='pre',
             layernorm=LayerNorm,
             is_decoder=False,
-            image_encoder =False,#change
+            image_encoder =False,
             cross_attn_hidden_size=None,
             use_bias=True,
             use_qkv_bias=False,
@@ -352,7 +380,7 @@ class BaseTransformerLayer(torch.nn.Module):
             output_layer_init_method = init_method
         self.layer_id = layer_id
         self.is_decoder = is_decoder[layer_id] if type(is_decoder) is list else is_decoder
-        self.image_encoder =image_encoder #change
+        self.image_encoder =image_encoder
         self.layernorm_order = layernorm_order
         self.drop_path = drop_path
         self.hooks = hooks
@@ -361,6 +389,8 @@ class BaseTransformerLayer(torch.nn.Module):
 
         # Layernorm on the input data.
         self.input_layernorm = layernorm(hidden_size, eps=layernorm_epsilon)
+        if self.image_encoder:
+            self.input_layernorm_for_ref_image =layernorm(hidden_size, eps=layernorm_epsilon) 
 
         # Self attention.
         self.attention = SelfAttention(
@@ -380,6 +410,7 @@ class BaseTransformerLayer(torch.nn.Module):
             transformer_pointer=transformer_pointer,
             params_dtype=params_dtype,
             skip_init=skip_init,
+            image_encoder=self.image_encoder,
             device=device
         )
 
@@ -391,26 +422,8 @@ class BaseTransformerLayer(torch.nn.Module):
 
         # Cross attention.
         # if self.is_decoder:
-        if self.is_decoder or self.image_encoder: #change
-            self.cross_attention_1 = CrossAttention(
-                hidden_size,
-                num_attention_heads,
-                attention_dropout_prob,
-                output_dropout_prob,
-                init_method,
-                layer_id,
-                hidden_size_per_attention_head=cross_hidden_size_per_attention_head,
-                output_layer_init_method=output_layer_init_method,
-                cross_attn_hidden_size=cross_attn_hidden_size,
-                bias=use_bias,
-                cross_num_multi_query_heads=cross_num_multi_query_heads,
-                row_parallel_linear_final_bias=row_parallel_linear_final_bias,
-                hooks=hooks,
-                transformer_pointer=transformer_pointer,
-                params_dtype=params_dtype
-            )
-
-            self.cross_attention_2 = CrossAttention(
+        if self.is_decoder:
+            self.cross_attention = CrossAttention(
                 hidden_size,
                 num_attention_heads,
                 attention_dropout_prob,
@@ -473,8 +486,8 @@ class BaseTransformer(torch.nn.Module):
                  cross_hidden_size_per_attention_head=None,
                  layernorm_order='pre',
                  parallel_output=False,
+                 image_encoder=False,
                  is_decoder=False,
-                 image_encoder=False, #change
                  cross_attn_hidden_size=None,
                  use_bias=True,
                  use_qkv_bias=False,
@@ -501,11 +514,11 @@ class BaseTransformer(torch.nn.Module):
         self.hidden_size_per_attention_head = hidden_size_per_attention_head
         self.cross_hidden_size_per_attention_head = cross_hidden_size_per_attention_head
         self.is_decoder = is_decoder
-        self.image_encoder = image_encoder #change
+        self.image_encoder = image_encoder
         self.cross_attn_hidden_size = cross_attn_hidden_size
         self.cross_num_multi_query_heads = cross_num_multi_query_heads
-        if not is_decoder and not image_encoder and cross_attn_hidden_size is not None: #change
-            print('warning: cross_attn_hidden_size is set but is_decoder is False and image_encoder is False')
+        if not is_decoder and cross_attn_hidden_size is not None:
+            print('warning: cross_attn_hidden_size is set but is_decoder is False')
         self.use_bias = use_bias
         self.use_qkv_bias = use_qkv_bias
         self.num_multi_query_heads = num_multi_query_heads
@@ -565,7 +578,7 @@ class BaseTransformer(torch.nn.Module):
                 cross_hidden_size_per_attention_head=cross_hidden_size_per_attention_head,
                 output_layer_init_method=self.output_layer_init_method,
                 is_decoder=self.is_decoder,
-                image_encoder=self.image_encoder,#change
+                image_encoder=self.image_encoder,
                 cross_attn_hidden_size=cross_attn_hidden_size,
                 layernorm_order=layernorm_order,
                 layernorm=layernorm,

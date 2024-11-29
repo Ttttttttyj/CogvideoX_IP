@@ -212,7 +212,7 @@ def save_ds_checkpoint(iteration, model, lr_scheduler, args, use_ema = False):
 
 
 def save_ds_checkpoint_no_optim(model, save_dir, tag=None, client_state={}, save_latest=True):
-    os.makedirs(save_dir, exist_ok=True)
+    # os.makedirs(save_dir, exist_ok=True)
     # Ensure tag is a string
     tag = str(tag)
     # Real save via deepspeed

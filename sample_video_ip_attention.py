@@ -21,6 +21,7 @@ from arguments import get_args
 from torchvision.transforms.functional import center_crop, resize
 from torchvision.transforms import InterpolationMode
 from PIL import Image
+from transformers import AutoProcessor
 
 
 
@@ -44,9 +45,8 @@ def read_from_file(p, rank=0, world_size=1):
                 continue
             yield l.strip(), cnt
 
-def load_from_file(p, rank=0, world_size=1):
+def load_from_file(p, processor,rank=0, world_size=1):
     prompt_path = os.path.join(p,"prompt.txt")
-    ref_imgs_path = []
     with open(prompt_path, "r") as fin:
         cnt = -1 # 记录当前行的索引
         for l in fin:
@@ -60,13 +60,13 @@ def load_from_file(p, rank=0, world_size=1):
             word_prompt = word_prompts[cnt].strip()
 
             ref_img_path = prompt_path.replace("prompt.txt","image"+str(cnt)+".jpg")
-            ref_imgs_path.append(ref_img_path)
-            yield l.strip(), cnt, word_prompt, ref_imgs_path
+            ref_img = Image.open(ref_img_path)
+            ref_img = processor(images=ref_img, return_tensors="pt")['pixel_values']
+            yield l.strip(), cnt, word_prompt, ref_img
 
 
 def get_unique_embedder_keys_from_conditioner(conditioner):
-    return list(set([x.input_key for x in conditioner.embedders])) # 无参考图像
-    # return list(set([x.input_keys for x in conditioner.embedders]))
+    return list(set([x.input_key for x in conditioner.embedders]))
 
 
 def get_batch(keys, value_dict, N: Union[List, ListConfig], T=None, device="cuda"):
@@ -143,6 +143,7 @@ def resize_for_rectangle_crop(arr, image_size, reshape_mode="random"):
 
 
 def sampling_main(args, model_cls):
+    processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
     if isinstance(model_cls, type):
         model = get_model(args, model_cls)
     else:
@@ -156,8 +157,7 @@ def sampling_main(args, model_cls):
     elif args.input_type == "txt":
         rank, world_size = mpu.get_data_parallel_rank(), mpu.get_data_parallel_world_size()
         print("rank and world_size", rank, world_size)
-        # data_iter = read_from_file(args.input_file, rank=rank, world_size=world_size) # change
-        data_iter = load_from_file(args.input_file, rank=rank, world_size=world_size)
+        data_iter = load_from_file(args.input_file, processor,rank=rank, world_size=world_size)
     else:
         raise NotImplementedError
 

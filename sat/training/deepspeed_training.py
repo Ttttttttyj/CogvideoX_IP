@@ -160,7 +160,7 @@ def training_main(args, model_cls, forward_step_function, create_dataset_functio
                 torch.manual_seed(args.seed)
                 torch.cuda.manual_seed(args.seed)
                 # ---------
-
+                os.makedirs(args.save, exist_ok=True)
                 iteration, skipped = train(model, optimizer,
                     lr_scheduler,
                     train_data,
@@ -653,7 +653,9 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
             optimizer.cur_scale if args.deepspeed else optimizer.loss_scale)
     log_string += 'speed {:.2f} samples/(min*GPU)'.format(
         (args.gradient_accumulation_steps * args.batch_size / args.model_parallel_size / (elapsed_time / 60000.0)))
-    print_rank0(log_string)
+    record_txt_path = os.path.join(args.save,'record.txt')
+    with open(record_txt_path,"a") as file:
+        file.write(log_string+'\n')
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)

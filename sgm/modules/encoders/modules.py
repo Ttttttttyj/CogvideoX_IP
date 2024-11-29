@@ -116,24 +116,6 @@ class GeneralConditioner(nn.Module):
                     f"with {count_params(embedder.image_proj, False)} params. Trainable: {embedder.is_trainable}"
                 )
 
-            # # T5 训练参数设置
-            # if not embedder.is_trainable:
-            #     embedder.train = disabled_train
-            #     for param in embedder.parameters():
-            #         param.requires_grad = False
-            #     embedder.eval()
-            # else:
-            #     embedder.train = disabled_train
-            #     for name, param in embedder.named_parameters():
-            #         if 'mapper' in name:
-            #             param.requires_grad = True
-            #         else:
-            #             param.requires_grad = False
-            # print(
-            #     f"Initialized embedder #{n}: {embedder.__class__.__name__} "
-            #     f"with {count_params(embedder.mapper, False)} params. Trainable: {embedder.is_trainable}"
-            # )
-
             if "input_key" in embconfig:
                 embedder.input_key = embconfig["input_key"]
             elif "input_keys" in embconfig:
@@ -191,20 +173,6 @@ class GeneralConditioner(nn.Module):
             elif hasattr(embedder, "input_keys"):
                 emb_out = embedder(*[batch[k] for k in embedder.input_keys])
 
-        # # T5输入
-        # with embedding_context():
-        #     if hasattr(embedder, "input_key") and (embedder.input_key is not None):
-        #         if embedder.legacy_ucg_val is not None:
-        #             if cond_or_not is None:
-        #                 batch = self.possibly_get_ucg_val(embedder, batch)
-        #             else:
-        #                 batch = self.surely_get_ucg_val(embedder, batch, cond_or_not)
-        #         emb_out = embedder({"txt":batch[embedder.input_key]})
-        #     elif hasattr(embedder, "input_keys"):
-        #         emb_out = embedder({"txt":batch[embedder.input_keys[0]],
-        #                             "word_prompt":batch[embedder.input_keys[1]],
-        #                             "image":batch[embedder.input_keys[2]]
-        #                             })
         assert isinstance(
             emb_out, (torch.Tensor, list, tuple)
         ), f"encoder outputs must be tensors or a sequence, but got {type(emb_out)}"
@@ -366,25 +334,10 @@ class ImageEncoder(AbstractEmbModel):
             param.requires_grad = False
 
 
-    def forward(self,image_path_list):
-        if image_path_list is not None:
-            images = [Image.open(path) for path in image_path_list]
-            image_features_list = [] 
-            for image in images:
-                preprocess = transforms.Compose([
-                transforms.Resize((224, 224)), 
-                transforms.ToTensor(),          
-                transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],
-                                    std=[0.26862954, 0.26130258, 0.27577711])  
-                ])
-                image = preprocess(image).unsqueeze(0).to(self.device)
-                image_features = self.image_encoder(image, output_hidden_states=False)[0]
-                image_features = self.image_proj(image_features)
-                image_features_list.append(image_features)
-            images_features = torch.cat(image_features_list, dim=0)
-        else: 
-            images_features = None
-        return images_features
+    def forward(self,ref_image): 
+        image_features = self.image_encoder(ref_image, output_hidden_states=False)[0]
+        image_features = self.image_proj(image_features)
+        return image_features
 
 # if __name__ == "__main__":
 #     encoder = ImageEncoder(1024,1920)

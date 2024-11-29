@@ -119,32 +119,48 @@ def attention_forward_default(self, hidden_states, mask, **kw_args):
     attention_fn = attention_fn_default
     if 'attention_fn' in self.hooks:
         attention_fn = self.hooks['attention_fn']
-
+    if self.image_encoder:
+        ref_image_length = kw_args["ref_image_length"]
+        ref_image_hidden_states = hidden_states[:,-ref_image_length:]
+        ref_image_raw_layer = self.query_key_value_for_ref_image(ref_image_hidden_states)
+        (ref_image_query_layer,
+            ref_image_key_layer,
+            ref_image_value_layer) = split_tensor_along_last_dim(ref_image_raw_layer, self.stride)
+        hidden_states = hidden_states[:,:-ref_image_length]
+    
     mixed_raw_layer = self.query_key_value(hidden_states)
     (mixed_query_layer,
         mixed_key_layer,
         mixed_value_layer) = split_tensor_along_last_dim(mixed_raw_layer, self.stride)
+    
+    if self.image_encoder:
+        mixed_query_layer = torch.cat((mixed_query_layer,ref_image_query_layer),dim=1)
+        mixed_key_layer = torch.cat((mixed_key_layer,ref_image_key_layer),dim=1)
+        mixed_value_layer = torch.cat((mixed_value_layer,ref_image_value_layer),dim=1)
 
     dropout_fn = self.attention_dropout if self.training else None
 
     query_layer = self._transpose_for_scores(mixed_query_layer)
     key_layer = self._transpose_for_scores(mixed_key_layer)
     value_layer = self._transpose_for_scores(mixed_value_layer)
-
     # rotary position embedding 
     if self.transformer.is_rotary_emb:
         query_layer, key_layer = self.transformer.position_embeddings(
             query_layer, key_layer, kw_args['position_ids'],max_seqlen=kw_args['position_ids'].max()+1,
             layer_id=kw_args['layer_id']
         )
-
     context_layer = attention_fn(query_layer, key_layer, value_layer, mask, dropout_fn, **kw_args)
 
     context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
     new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
     context_layer = context_layer.view(*new_context_layer_shape)
+    if self.image_encoder:
+        context_layer = context_layer[:,:-ref_image_length]
+        ref_image_layer = context_layer[:,-ref_image_length:]
+        ref_image_output = self.dense_for_ref_image(ref_image_layer)
     output = self.dense(context_layer)
-
+    if self.image_encoder:
+        output = torch.cat((output,ref_image_output),dim=1)
     if self.training:
         output = self.output_dropout(output)
     return output

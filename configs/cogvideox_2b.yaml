@@ -35,6 +35,7 @@ model:
       hidden_size: 1920
       adm_in_channels: 256
       num_attention_heads: 30
+      image_encoder: False
 
       transformer_args:
         checkpoint_activations: True ## using gradient checkpointing

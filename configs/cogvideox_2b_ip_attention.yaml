@@ -36,6 +36,7 @@ model:
       hidden_size: 1920
       adm_in_channels: 256
       num_attention_heads: 30
+      image_encoder: true #True for encoder_train
 
       transformer_args:
         checkpoint_activations: True ## using gradient checkpointing
@@ -45,7 +46,6 @@ model:
         skip_init: false
         model_parallel_size: 1
         is_decoder: false
-        image_encoder: true #True for encoder_train
 
       modules:
         pos_embed_config:

@@ -449,20 +449,23 @@ class AdaLNMixin(BaseMixin):
         qk_ln=True,
         hidden_size_head=None,
         elementwise_affine=True,
+        image_encoder=False,
     ):
         super().__init__()
         self.num_layers = num_layers # 30
         self.width = width # 45
         self.height = height # 30
         self.compressed_num_frames = compressed_num_frames # 4
+        self.image_encoder = image_encoder
 
         self.adaLN_modulations = nn.ModuleList(
             [nn.Sequential(nn.SiLU(), nn.Linear(time_embed_dim, 12 * hidden_size)) for _ in range(num_layers)]
         )
 
-        self.adaLN_modulations_for_image = nn.ModuleList(
-            [nn.Sequential(nn.SiLU(), nn.Linear(time_embed_dim, 8 * hidden_size)) for _ in range(num_layers)]
-        )
+        if self.image_encoder:
+            self.adaLN_modulations_for_ref_image = nn.ModuleList(
+                [nn.Sequential(nn.SiLU(), nn.Linear(time_embed_dim, 2 * hidden_size)) for _ in range(num_layers)] 
+            )
 
         self.qk_ln = qk_ln
         if qk_ln:
@@ -479,89 +482,6 @@ class AdaLNMixin(BaseMixin):
                 ]
             )
 
-    # def layer_forward(
-    #     self,
-    #     hidden_states,
-    #     mask,
-    #     *args,
-    #     **kwargs,
-    # ):
-    #     text_length = kwargs["text_length"]
-    #     # hidden_states (b,(n_t+t*n_i),d)
-    #     text_hidden_states = hidden_states[:, :text_length]  # (b,n,d)
-    #     img_hidden_states = hidden_states[:, text_length:]  # (b,(t n),d)
-
-
-
-    #     layer = self.transformer.layers[kwargs["layer_id"]] # BaeTransformerLayer
-    #     adaLN_modulation = self.adaLN_modulations[kwargs["layer_id"]]
-
-    #     (
-    #         shift_msa,
-    #         scale_msa,
-    #         gate_msa,
-    #         shift_mlp,
-    #         scale_mlp,
-    #         gate_mlp,
-    #         text_shift_msa,
-    #         text_scale_msa,
-    #         text_gate_msa,
-    #         text_shift_mlp,
-    #         text_scale_mlp,
-    #         text_gate_mlp,
-    #     ) = adaLN_modulation(kwargs["emb"]).chunk(12, dim=1) # 步长t
-    #     gate_msa, gate_mlp, text_gate_msa, text_gate_mlp = (
-    #         gate_msa.unsqueeze(1),
-    #         gate_mlp.unsqueeze(1),
-    #         text_gate_msa.unsqueeze(1),
-    #         text_gate_mlp.unsqueeze(1),
-    #     )
-
-    #     # self full attention (b,(t n),d)
-    #     img_attention_input = layer.input_layernorm(img_hidden_states)
-    #     text_attention_input = layer.input_layernorm(text_hidden_states)
-    #     img_attention_input = modulate(img_attention_input, shift_msa, scale_msa)
-    #     text_attention_input = modulate(text_attention_input, text_shift_msa, text_scale_msa)
-
-    #     attention_input = torch.cat((text_attention_input, img_attention_input), dim=1)  # (b,n_t+t*n_i,d)
-    #     attention_output = layer.attention(attention_input, mask, **kwargs)
-    #     text_attention_output = attention_output[:, :text_length]  # (b,n,d)
-    #     img_attention_output = attention_output[:, text_length:]  # (b,(t n),d)
-
-    #     if self.transformer.layernorm_order == "sandwich":
-    #         text_attention_output = layer.third_layernorm(text_attention_output)
-    #         img_attention_output = layer.third_layernorm(img_attention_output)
-    #     img_hidden_states = img_hidden_states + gate_msa * img_attention_output  # (b,(t n),d)
-    #     text_hidden_states = text_hidden_states + text_gate_msa * text_attention_output  # (b,n,d)
-
-    #     # 增加 cross attention，实现参考图像特征注入
-    #     res = img_hidden_states
-    #     ref_img_hidden_states = kwargs["ref_image"] #(b,257,d)
-    #     T = kwargs["images"].shape[1]
-    #     img_hidden_states = rearrange(img_hidden_states,"b (t n) d -> b t n d",t=T,n=self.width*self.height)
-    #     cross_attention_output = layer.cross_attention(img_hidden_states,None,ref_img_hidden_states,**kwargs) #[b,t,n,d]
-    #     img_hidden_states = rearrange(cross_attention_output,"b t n d -> b (t n) d")
-    #     img_hidden_states += res
-
-    #     # mlp (b,(t n),d)
-    #     img_mlp_input = layer.post_attention_layernorm(img_hidden_states)  # vision (b,(t n),d)
-    #     text_mlp_input = layer.post_attention_layernorm(text_hidden_states)  # language (b,n,d)
-    #     img_mlp_input = modulate(img_mlp_input, shift_mlp, scale_mlp)
-    #     text_mlp_input = modulate(text_mlp_input, text_shift_mlp, text_scale_mlp)
-    #     mlp_input = torch.cat((text_mlp_input, img_mlp_input), dim=1)  # (b,(n_t+t*n_i),d
-    #     mlp_output = layer.mlp(mlp_input, **kwargs)
-    #     img_mlp_output = mlp_output[:, text_length:]  # vision (b,(t n),d)
-    #     text_mlp_output = mlp_output[:, :text_length]  # language (b,n,d)
-    #     if self.transformer.layernorm_order == "sandwich":
-    #         text_mlp_output = layer.fourth_layernorm(text_mlp_output)
-    #         img_mlp_output = layer.fourth_layernorm(img_mlp_output)
-
-    #     img_hidden_states = img_hidden_states + gate_mlp * img_mlp_output  # vision (b,(t n),d)
-    #     text_hidden_states = text_hidden_states + text_gate_mlp * text_mlp_output  # language (b,n,d)
-
-    #     hidden_states = torch.cat((text_hidden_states, img_hidden_states), dim=1)  # (b,(n_t+t*n_i),d)
-    #     return hidden_states
-
     def layer_forward(
         self,
         hidden_states,
@@ -574,16 +494,9 @@ class AdaLNMixin(BaseMixin):
         # hidden_states (b,(n_t+t*n_i),d)
         text_hidden_states = hidden_states[:, :text_length]  # (b,n,d) [b,226,1920]
         img_hidden_states = hidden_states[:, text_length:]  # (b,(t n),d) [b,13*1350,1920]
-        if kwargs["layer_id"] == 0:
-            ref_img_hidden_states = kwargs["ref_image"]
-        else:
-            ref_img_hidden_states = kwargs["pre_layer_ref_image_output"]
-        
 
         layer = self.transformer.layers[kwargs["layer_id"]] # BaeTransformerLayer
         adaLN_modulation = self.adaLN_modulations[kwargs["layer_id"]]
-        adaLN_modulations_for_image = self.adaLN_modulations_for_image[kwargs["layer_id"]]
-        
         (
             shift_msa,
             scale_msa,
@@ -606,15 +519,20 @@ class AdaLNMixin(BaseMixin):
             text_gate_mlp.unsqueeze(1),
         )
 
-        (   shift_cross_1,
-            scale_cross_1,
-            text_shift_cross_1,
-            text_scale_cross_1,
-            ref_image_shift,
-            ref_image_scale,
-            ref_image_shift_cross_2,
-            ref_image_scale_cross_2,
-        ) = adaLN_modulations_for_image(kwargs["emb"]).chunk(8,dim=1) # kwargs["emb"]:[1,512]
+        if self.image_encoder:
+            ref_image_length = kwargs["ref_image_length"]
+            if kwargs["layer_id"] == 0:
+                ref_img_hidden_states = kwargs["ref_image"]
+            else:
+                ref_img_hidden_states = kwargs["pre_layer_ref_image_output"]
+            adaLN_modulations_for_image = self.adaLN_modulations_for_ref_image[kwargs["layer_id"]]
+            (
+                ref_image_shift,
+                ref_image_scale,
+            ) = adaLN_modulations_for_image(kwargs["emb"]).chunk(2,dim=1) # kwargs["emb"]:[1,512]
+
+            ref_image_attention_input = layer.input_layernorm_for_ref_image(ref_img_hidden_states)
+            ref_image_attention_input = modulate(ref_image_attention_input,ref_image_shift,ref_image_scale)
 
         # self full attention (b,(t n),d)
         img_attention_input = layer.input_layernorm(img_hidden_states)
@@ -624,9 +542,19 @@ class AdaLNMixin(BaseMixin):
         text_attention_input = modulate(text_attention_input, text_shift_msa, text_scale_msa)
 
         attention_input = torch.cat((text_attention_input, img_attention_input), dim=1)  # (b,n_t+t*n_i,d)
+
+        if self.image_encoder:
+            attention_input = torch.cat((attention_input,ref_image_attention_input),dim=1)
+            
         attention_output = layer.attention(attention_input, mask, **kwargs)
         text_attention_output = attention_output[:, :text_length]  # (b,n,d)
-        img_attention_output = attention_output[:, text_length:]  # (b,(t n),d)
+        if self.image_encoder:
+            img_attention_output = attention_output[:, text_length:-ref_image_length]  # (b,(t n),d)
+            ref_image_attention_output = attention_output[:,-ref_image_length:]
+            ref_img_hidden_states = ref_img_hidden_states + ref_image_attention_output
+            output_cross_layer['pre_layer_ref_image_output'] = ref_img_hidden_states
+        else:
+            img_attention_output = attention_output[:,text_length:]
 
         if self.transformer.layernorm_order == "sandwich": # 'pre'
             text_attention_output = layer.third_layernorm(text_attention_output)
@@ -634,33 +562,6 @@ class AdaLNMixin(BaseMixin):
 
         img_hidden_states = img_hidden_states + gate_msa * img_attention_output  # (b,(t n),d)
         text_hidden_states = text_hidden_states + text_gate_msa * text_attention_output  # (b,n,d)
-
-
-        # 更新ref_image的cross_attention
-        img_cross_attn_input = layer.post_attention_layernorm(img_hidden_states)  # vision (b,(t n),d)
-        text_cross_attn_input = layer.post_attention_layernorm(text_hidden_states)  # language (b,n,d)
-        ref_cross_attention_input = layer.post_attention_layernorm(ref_img_hidden_states)
-        img_cross_attn_input = modulate(img_cross_attn_input, shift_cross_1, scale_cross_1)
-        text_cross_attn_input = modulate(text_cross_attn_input, text_shift_cross_1, text_scale_cross_1)
-        ref_cross_attention_input = modulate(ref_cross_attention_input,ref_image_shift,ref_image_scale)
-
-        cross_attn_1_input_kv = torch.cat((text_cross_attn_input,img_cross_attn_input, ref_cross_attention_input), dim=1) # (b,n_ri+n_t+t*n_i,d) [b, 18033, 1920]
-        cross_attn_1_output = layer.cross_attention_1(ref_cross_attention_input,None,cross_attn_1_input_kv,**kwargs) #(b,1,n_ri,d) [b, 257, 1920]
-        ref_img_hidden_states = cross_attn_1_output + ref_img_hidden_states
-        
-        output_cross_layer['pre_layer_ref_image_output'] = ref_img_hidden_states
-        
-        # 更新text和image的cross_attention，实现ref_image特征注入
-        ref_cross_attention_2_input_kv = layer.post_attention_layernorm(ref_img_hidden_states)
-        ref_cross_attention_2_input_kv = modulate(ref_cross_attention_2_input_kv,ref_image_shift_cross_2,ref_image_scale_cross_2)
-        T = kwargs["images"].shape[1]
-        cross_attn_2_input_q = torch.cat((text_cross_attn_input,img_cross_attn_input),dim=1) #(b,n_t+t*n_i,d)  [b, 17776, 1920]
-        cross_attn_2_output = layer.cross_attention_2(cross_attn_2_input_q,None,ref_cross_attention_2_input_kv,**kwargs) #[b,n_t+t*n_i,d] [b, 17776, 1920]
-
-        text_cross_attention_output = cross_attn_2_output[:, :text_length]  # (b,n,d)
-        img_cross_attention_output = cross_attn_2_output[:, text_length:]  # (b,(t n),d)
-        text_hidden_states = text_hidden_states + text_cross_attention_output  # (b,n,d)
-        img_hidden_states = img_hidden_states + img_cross_attention_output  # (b,(t n),d)
 
         # mlp (b,(t n),d)
         img_mlp_input = layer.post_attention_layernorm(img_hidden_states)  # vision (b,(t n),d)
@@ -734,6 +635,7 @@ class DiffusionTransformer(BaseModel):
         hidden_size,
         num_layers,
         num_attention_heads,
+        image_encoder,
         elementwise_affine,
         time_embed_dim=None,
         num_classes=None,
@@ -765,6 +667,7 @@ class DiffusionTransformer(BaseModel):
         self.input_time = input_time
         self.num_layers = num_layers
         self.num_attention_heads = num_attention_heads
+        self.image_encoder = image_encoder
         self.is_decoder = transformer_args.is_decoder
         self.elementwise_affine = elementwise_affine
         self.height_interpolation = height_interpolation
@@ -791,6 +694,7 @@ class DiffusionTransformer(BaseModel):
         transformer_args.num_layers = num_layers
         transformer_args.hidden_size = hidden_size
         transformer_args.num_attention_heads = num_attention_heads
+        transformer_args.image_encoder = self.image_encoder
         transformer_args.parallel_output = parallel_output
         super().__init__(args=transformer_args, transformer=None, **kwargs)
 
@@ -880,6 +784,7 @@ class DiffusionTransformer(BaseModel):
                     hidden_size_head=self.hidden_size // self.num_attention_heads,
                     time_embed_dim=self.time_embed_dim,
                     elementwise_affine=self.elementwise_affine,
+                    image_encoder = self.image_encoder,
                 ),
             )
         else:

@@ -18,7 +18,6 @@ from torchvision.transforms import InterpolationMode
 import decord
 from decord import VideoReader
 from torch.utils.data import Dataset
-from transformers import CLIPProcessor
 from PIL import Image
 
 
@@ -466,6 +465,7 @@ class VideoDataset(MetaDistributedWebDataset):
 
 import re
 from torchvision import transforms
+from transformers import AutoProcessor
 
 class SFTDataset(Dataset):
     def __init__(self, data_dir, video_size, fps, max_num_frames, skip_frms_num=3):
@@ -473,7 +473,7 @@ class SFTDataset(Dataset):
         skip_frms_num: ignore the first and the last xx frames, avoiding transitions.
         """
         super(SFTDataset, self).__init__()
-
+        self.processor = AutoProcessor.from_pretrained("openai/clip-vit-large-patch14")
         self.video_size = video_size
         self.fps = fps
         self.max_num_frames = max_num_frames
@@ -518,15 +518,8 @@ class SFTDataset(Dataset):
         decord.bridge.set_bridge("torch")
         video_path = self.video_paths[index]
 
-        # T5训练参考图像处理
-        # ref_image = Image.open(self.ref_images[index])
-        # preprocess = transforms.Compose([
-        # transforms.Resize((224, 224)),  # 调整图像大小
-        # transforms.ToTensor(),           # 转换为张量
-        # transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],
-        #                     std=[0.26862954, 0.26130258, 0.27577711])  # 归一化
-        # ])
-        # ref_image = preprocess(ref_image)
+        ref_image = Image.open(self.ref_images[index])
+        ref_image = self.processor(images=ref_image, return_tensors="pt")['pixel_values'][0]
 
         vr = VideoReader(uri=video_path, height=-1, width=-1)
         # vr shape B F C H W, vr[:, :1, :, :, :]
@@ -583,8 +576,7 @@ class SFTDataset(Dataset):
             "mp4": tensor_frms,
             "txt": self.captions[index],
             "word_prompt":self.word_prompts[index],
-            # "image":ref_image, #T5,存储的是经过process的张量
-            "ref_image":self.ref_images[index], #存储的是路径
+            "ref_image": ref_image,
             "num_frames": num_frames,
             "fps": self.fps,
         }
