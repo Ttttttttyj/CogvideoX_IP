@@ -143,7 +143,7 @@ def resize_for_rectangle_crop(arr, image_size, reshape_mode="random"):
 
 
 def sampling_main(args, model_cls):
-    processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    processor = AutoProcessor.from_pretrained("openai/clip-vit-large-patch14")
     if isinstance(model_cls, type):
         model = get_model(args, model_cls)
     else:
@@ -195,7 +195,7 @@ def sampling_main(args, model_cls):
                 "prompt": text,
                 "negative_prompt": "",
                 "word_prompt":word_prompt,
-                "ref_image":ref_img,
+                "ref_image":ref_img.to(device),
                 "num_frames": torch.tensor(T).unsqueeze(0),
             }
 

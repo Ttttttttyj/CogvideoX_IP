@@ -2,7 +2,7 @@ args:
   image2video: False # True for image2video, False for text2video
   latent_channels: 16
   mode: inference
-  # load: "../transformer" # This is for Full model without image encoder
+  # load: "../transformer" # This its for Full model without image encoder
   load: "./ckpts_2b_ip/Cross_attention-11-08-11-02" # This is for Full model with image encoder
   batch_size: 1
   input_type: txt
